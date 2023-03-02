@@ -112,28 +112,6 @@ def exp_max(p, u,D,alpha,rho,psi,num_iter=2):
 # print(a)
 # print(b)
 
-# Class wave_solver:      
-#        cfl=0.1
-      
-#        def __init__(self,p, U,D,f,Rho,Psi):
-#         self.U = U
-#         self.D=D
-#         self.f=f
-#         self.rho=Rho
-#         self.Psi=Psi
-#         self.p=p         
-       
-               
-
-
-def A(u,P,D,f,sigma):
-    return np.exp(-(np.linalg.norm(u-P@D@f)**2)/sigma)
-
-# def create_A(u,P,D,f,sigma,psi,J):
-#     A=np.zeros((len(psi),len(psi)))
-
-#     for i in range(len(u)):
-#         for j in range(len(D)):
 
 
 
@@ -153,8 +131,7 @@ def create_D2(n):
     return D2
 
 
-def create_Lap(n):
-    return kron(create_D2(n), identity(n) ), kron( identity(n),create_D2(n))
+
 
 def solve_wave(f0,f1,Dxx,Dyy,cfl,m):
    for t in range(m):
@@ -180,18 +157,17 @@ class wave_data:
         x=np.linspace(0,1,self.N_x+1)[1:]
         dx=x[1]-x[0]
         dt=np.sqrt(self.cfl)*dx
-        y=x
-        X,Y=np.meshgrid( x, y, indexing='ij')
-        f0=np.sin(2*math.pi*X)
+
+        f0=np.sin(2*math.pi*x)
         # *np.cos(math.pi*t)
         # f0[int(self.N_x/2):int(self.N_x/2)+2,int(self.N_x/2):int(self.N_x/2)+2]=1
         f1=f0*np.cos(2*math.pi*dt)
-        return np.ravel(f0), np.ravel(f1)
+        return f0,f1
     
     @classmethod
     def create_mtx(self,n): 
-        self.Dxx=kron(create_D2(n), identity(n) )
-        self.Dyy=kron( identity(n),create_D2(n))
+        self.Dxx=create_D2(n)
+        
         
    
     def solve_equation(self,m):
@@ -200,7 +176,7 @@ class wave_data:
         sol=[]
         for t in range(m):
             sol.append(f0)
-            f=2*f1-f0+wave_data.cfl*(self.Dxx+self.Dyy)@f1
+            f=2*f1-f0+wave_data.cfl*(self.Dxx)@f1
             f0=f1
             f1=f
    
@@ -218,30 +194,27 @@ sol=C.solve_equation(100)
 x=np.linspace(0,1,N+1)[1:]
 dx=x[1]-x[0]
 dt=np.sqrt(C.cfl)*dx
-y=x
-X,Y=np.meshgrid( x, y, indexing='ij')
-f=np.sin(2*math.pi*X)*np.cos(2*math.pi*4*dt)
-print(np.linalg.norm(sol[4].reshape(N,N)-f))
-# fig = plt.figure()
-# ax = plt.axes(projection='3d')
 
-# ax.plot_surface(X, Y, sol[-1].reshape((N,N)), rstride=1, cstride=1,cmap='jet', edgecolor = 'none')
-# plt.show()
+# f=np.sin(2*math.pi*x)*np.cos(2*math.pi*4*dt)
+# print(np.linalg.norm(sol[4]-f))
 
+def create_A(dt,h,n):
+    D=create_D2(n).toarray()/h**2
+    A=np.block([[np.zeros((n,n)),np.eye(n)],[D,np.zeros((n,n))]])
+    return np.eye(2*n)+dt*A
 
+N=30
+x=np.linspace(0,1,N+1)[1:]
+dx=x[1]-x[0]
+dt=np.sqrt(0.1)*dx
+f=np.sin(2*math.pi*x).reshape(N,1)
+g=f*0
+f0=np.vstack([f,g])
 
+mtx=create_A(dt,dx,N)
+for _ in range(10):
+    f0=mtx@f0
 
-
-# n=4
-# f0=np.zeros((n,n))
-# f0[1,1]=1
-# f0=np.transpose(f0.flatten())
-# Dxx,Dyy=create_Lap(n)
-# u=solve_wave(csr_matrix(f0).transpose(),csr_matrix(f0).transpose(),Dxx,Dyy,0.4,30)
-# print(u.toarray().reshape(n,n))
-# m, n,= symbols('l1 l2')
-# x, y, z = symbols('x y z')
-# expr = log(exp(-((x-m)**2+(y-n)**2)))
-# e=simplify(diff(expr, m))
-# print(e)
+plt.plot(f0[:N])
+plt.show()   
 
