@@ -1,0 +1,168 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import math
+import pickle
+import multiprocessing
+import timeit
+import datetime
+from scipy import sparse
+from sympy import *
+
+import scipy 
+from scipy.sparse import csr_matrix, kron, identity
+from scipy.linalg import circulant
+from scipy.sparse import block_diag
+from scipy.sparse import vstack
+
+from scipy.sparse.linalg import cg, spsolve
+import pylops
+import timeit
+
+import ray
+
+from scipy import signal
+import matplotlib.pyplot as plt
+
+class Calc:
+       sigma=0.1
+       def __init__(self,p, U,D,f,Rho,Psi):
+        self.U = U
+        self.D=D
+        self.f=f
+        self.rho=Rho
+        self.Psi=Psi
+        self.p=p
+
+       
+       def base(self,m,s):
+           return np.exp(-(np.linalg.norm(self.U[m]-self.p@self.D[s]@self.f)**2)/self.sigma)
+          
+       
+       def Adm(self,m):
+           return sum([self.base(m,s)*self.Rho[s] for s in range(len(self.D))])
+       
+       
+       def A(self,m,s):
+           return self.base(m,s)*self.Rho[s]/self.Adm(m)
+       
+       def create_v(self,i):
+           x=0
+
+
+           for m in range(len(self.U)):
+               for s in range(len(self.D)):
+                    x+=self.inner(self.U[m],self.p@self.D[s]@self.Psi[i])
+           return x        
+       
+       @staticmethod
+       def inner(u,v):
+           return np.dot(np.transpose(v),u)
+                   
+       def create_A(self,i,j):
+           x=0
+           for m in range(len(self.U)):
+               for s in range(len(self.D)):
+                   x+=self.inner(self.p@self.D[s]@self.Psi[i],self.p@self.D[s]@self.Psi[j])
+           return x              
+       
+       def solve(self):
+           A=np.zeros((len(self.Psi),len(self.Psi)))
+           V=np.zeros((len(self.Psi),1))
+           for i in range(len(self.Psi)):
+               
+               V[i]=self.create_v(i)
+               for j in range(len(self.Psi)):
+                   A[i,j]=self.create_A(i,j)
+                   
+           return scipy.linalg.solve(A,V)
+       
+       def up_rho(self):
+           rho_new=np.zeros((len(D),1))
+           for s in range(len(D)):
+               x=0
+               for m in range(len(self.U)):
+                   x+=(1/(len(self.D)))*self.A(m,s)
+               
+               rho_new[s]=x
+
+           return rho_new
+                   
+           
+N1=10
+N2=1000      
+psi=[np.random.rand(N2,1), np.random.rand(N2,1) ]
+alpha=[0.1,0.2]
+u=  [np.random.rand(N1,1)]   
+D=[np.random.rand(N2,N2)]
+rho=[1]
+p=np.random.rand(N1,N2)
+f=np.random.rand(N2,1)
+
+def exp_max(p, u,D,alpha,rho,psi):
+    f=sum([alpha[i]*psi[i] for i in range(len(psi))])
+    C=Calc(p, u,D,f,rho,psi)
+    alpha=C.solve()
+    rho=C.rho
+
+    return alpha, rho
+
+a,b=exp_max(p, u,D,alpha,rho,psi)
+print(a)
+print(b)
+
+               
+       
+               
+
+
+def A(u,P,D,f,sigma):
+    return np.exp(-(np.linalg.norm(u-P@D@f)**2)/sigma)
+
+# def create_A(u,P,D,f,sigma,psi,J):
+#     A=np.zeros((len(psi),len(psi)))
+
+#     for i in range(len(u)):
+#         for j in range(len(D)):
+
+
+
+
+def dft_mtx(n):
+    return scipy.linalg.dft(n)/np.sqrt(n)
+
+def create_D2(n):
+   
+    kernel = np.zeros((n, 1))
+    kernel[-1] = 1
+    kernel[0] = -2
+    kernel[1] = 1
+    D2 = circulant(kernel)
+
+    D2=csr_matrix(D2)
+    return D2
+
+
+def create_Lap(n):
+    return kron(create_D2(n), identity(n) ), kron( identity(n),create_D2(n))
+
+def solve_wave(f0,f1,Dxx,Dyy,cfl,m):
+   for t in range(m):
+       f=2*f1-f0+cfl*(Dxx+Dyy)@f1
+       f0=f1
+       f1=f
+
+   return f   
+
+# n=4
+# f0=np.zeros((n,n))
+# f0[1,1]=1
+# f0=np.transpose(f0.flatten())
+# Dxx,Dyy=create_Lap(n)
+# u=solve_wave(csr_matrix(f0).transpose(),csr_matrix(f0).transpose(),Dxx,Dyy,0.4,30)
+# print(u.toarray().reshape(n,n))
+# m, n,= symbols('l1 l2')
+# x, y, z = symbols('x y z')
+# expr = log(exp(-((x-m)**2+(y-n)**2)))
+# e=simplify(diff(expr, m))
+# print(e)
+
