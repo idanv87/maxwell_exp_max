@@ -36,7 +36,7 @@ class Calc:
 
        
        def base(self,m,s):
-           return np.exp(-(np.linalg.norm(self.U[m]-self.p@self.D[s]@self.f)**2)/self.sigma)
+           return np.exp(-(np.linalg.norm(self.U[m]-self.p@np.linalg.matrix_power(self.D[s],m)@self.f)**2)/self.sigma)
           
        
        def Adm(self,m):
@@ -52,18 +52,19 @@ class Calc:
 
            for m in range(len(self.U)):
                for s in range(len(self.D)):
-                    x+=self.inner(self.U[m],self.p@self.D[s]@self.Psi[i])
+                    x+=self.inner(self.U[m],self.p@np.linalg.matrix_power(self.D[s],m)@self.Psi[i])
            return x        
        
        @staticmethod
        def inner(u,v):
            return np.dot(np.transpose(v),u)
+       
                    
        def create_A(self,i,j):
            x=0
            for m in range(len(self.U)):
                for s in range(len(self.D)):
-                   x+=self.inner(self.p@self.D[s]@self.Psi[i],self.p@self.D[s]@self.Psi[j])
+                   x+=self.inner(self.p@np.linalg.matrix_power(self.D[s],m)@self.Psi[i],self.p@np.linalg.matrix_power(self.D[s],m)@self.Psi[j])
            return x              
        
        def solve(self):
@@ -82,24 +83,24 @@ class Calc:
            for s in range(len(D)):
                x=0
                for m in range(len(self.U)):
-                   x+=(1/(len(self.D)))*self.A(m,s)
+                   x+=(1/(len(self.U)))*self.A(m,s)
                
                rho_new[s]=x
 
            return rho_new
                    
            
-N1=10
-N2=100     
-psi=[np.random.rand(N2,1), np.random.rand(N2,1) ]
-alpha=[0.1,0.2]
-u=  [np.random.rand(N1,1)]   
-D=[np.random.rand(N2,N2)]
-rho=[1]
-p=np.random.rand(N1,N2)
-f=np.random.rand(N2,1)
+# N1=10
+# N2=100     
+# psi=[np.random.rand(N2,1), np.random.rand(N2,1) ]
+# alpha=[0.1,0.2]
+# u=  [np.random.rand(N1,1)]   
+# D=[np.random.rand(N2,N2)]
+# rho=[1]
+# p=np.random.rand(N1,N2)
+# f=np.random.rand(N2,1)
 
-def exp_max(p, u,D,alpha,rho,psi,num_iter=4):
+def exp_max(p, u,D,alpha,rho,psi,num_iter=10):
     assert len(rho)==len(D)
     assert len(alpha)==len(psi)
 
@@ -108,7 +109,7 @@ def exp_max(p, u,D,alpha,rho,psi,num_iter=4):
         C=Calc(p, u,D,f,rho,psi)
         alpha=C.solve()
         rho=C.up_rho()
-        print(rho)
+       
   
 
 
@@ -149,21 +150,24 @@ p[:N_samples, :N_samples]=np.eye(N_samples)
 x=np.linspace(0,1,N+1)[1:]
 dx=x[1]-x[0]
 dt=np.sqrt(0.1)*dx
-f=np.sin(2*math.pi*x).reshape(N,1)
+f=2*np.sin(2*math.pi*x).reshape(N,1)
 g=f*0
 f0=np.vstack([f,g])
 
 mtx=create_A(dt,dx,N)
-psi=[np.vstack([f,g]),0.5*np.vstack([np.sin(4*math.pi*x).reshape(N,1),g])] # base functions 
-alpha=[0.1,0.01]
-rho=[0.4,0.4,0.2]
+psi=[np.vstack([np.sin(2*math.pi*x).reshape(N,1),g])] # base functions 
+# psi=[np.vstack([f,g])] # base functions 
+alpha=[0.1]
+rho=[0.9,0.1]
 u=[]
-D=[mtx,mtx@mtx, mtx@mtx@mtx]
-for i in range(10):
+D=[mtx,mtx@mtx]
+for i in range(3):
     f0=mtx@f0
-    if i>7:
+    if True:
         u.append(p@f0)
 
 
-a,b=exp_max(p, u,D,alpha,rho,psi)
-print(a)
+alpha_final,rho_final=exp_max(p, u,D,alpha,rho,psi)
+# print(sum(rho_final))
+# print(rho_final)
+print(alpha_final)
