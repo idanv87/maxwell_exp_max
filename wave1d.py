@@ -14,6 +14,7 @@ from scipy.sparse import csr_matrix, kron, identity
 from scipy.linalg import circulant
 from scipy.sparse import block_diag
 from scipy.sparse import vstack
+from sklearn.metrics import mean_squared_error
 
 from scipy.sparse.linalg import cg, spsolve
 import pylops
@@ -24,9 +25,12 @@ import ray
 from scipy import signal
 import matplotlib.pyplot as plt
 
+from utils import create_p, generator
+
 class Calc:
        sigma=0.1
-       def __init__(self,p, U,D,f,Rho,Psi):
+       def __init__(self,p, U,D,f,Rho,Psi, iter):
+        self.iter=iter
         self.U = U
         self.D=D
         self.f=f
@@ -36,7 +40,7 @@ class Calc:
 
        
        def base(self,m,s):
-           return np.exp(-(np.linalg.norm(self.U[m]-self.p@np.linalg.matrix_power(self.D[s],m)@self.f)**2)/self.sigma)
+           return np.exp(-(np.linalg.norm(self.U[m]-self.p@np.linalg.matrix_power(self.D[s],self.iter)@self.f)**2)/self.sigma)
           
        
        def Adm(self,m):
@@ -52,7 +56,7 @@ class Calc:
 
            for m in range(len(self.U)):
                for s in range(len(self.D)):
-                    x+=self.inner(self.U[m],self.p@np.linalg.matrix_power(self.D[s],m)@self.Psi[i])
+                    x+=self.inner(self.U[m],self.p@np.linalg.matrix_power(self.D[s],self.iter)@self.Psi[i])
            return x        
        
        @staticmethod
@@ -64,7 +68,7 @@ class Calc:
            x=0
            for m in range(len(self.U)):
                for s in range(len(self.D)):
-                   x+=self.inner(self.p@np.linalg.matrix_power(self.D[s],m)@self.Psi[i],self.p@np.linalg.matrix_power(self.D[s],m)@self.Psi[j])
+                   x+=self.inner(self.p@np.linalg.matrix_power(self.D[s],self.iter)@self.Psi[i],self.p@np.linalg.matrix_power(self.D[s],self.iter)@self.Psi[j])
            return x              
        
        def solve(self):
@@ -75,8 +79,9 @@ class Calc:
                V[i]=self.create_v(i)
                for j in range(len(self.Psi)):
                    A[i,j]=self.create_A(i,j)
-                   
-           return scipy.linalg.solve(A,V)
+           print(np.linalg.norm(A,2))
+           return scipy.linalg.pinv(A)@V  
+        #    return scipy.linalg.solve(A,V)
        
        def up_rho(self):
            rho_new=np.zeros((len(D),1))
@@ -100,15 +105,17 @@ class Calc:
 # p=np.random.rand(N1,N2)
 # f=np.random.rand(N2,1)
 
-def exp_max(p, u,D,alpha,rho,psi,num_iter=10):
+def exp_max(p, u,D,alpha,rho,psi,iter,num_iter=1):
     assert len(rho)==len(D)
     assert len(alpha)==len(psi)
-
+    
     for _ in range(num_iter):
+        alpha_old=alpha
         f=sum([alpha[i]*psi[i] for i in range(len(psi))])
-        C=Calc(p, u,D,f,rho,psi)
+        C=Calc(p, u,D,f,rho,psi, iter)
         alpha=C.solve()
         rho=C.up_rho()
+        # print(np.linalg.norm(alpha-alpha_old))
        
   
 
@@ -126,48 +133,87 @@ def exp_max(p, u,D,alpha,rho,psi,num_iter=10):
 def dft_mtx(n):
     return scipy.linalg.dft(n)/np.sqrt(n)
 
-def create_D2(n):
-   
+def create_bc(n):
     kernel = np.zeros((n, 1))
+
     kernel[-1] = 1
     kernel[0] = -2
     kernel[1] = 1
-    D2 = circulant(kernel)
 
+    return circulant(kernel)
+
+
+def create_D2(n,w):
+    
+    kernel = np.zeros((n, 1))
+    kernel[-2]=w[2]
+    kernel[-1] = w[1]
+    kernel[0] = w[0]
+    kernel[1] = w[1]
+    kernel[2]=w[2]
+    D2 = circulant(kernel)
+    D2[:2,:]=create_bc(n)[:2,:]
+    D2[-2:,:]=create_bc(n)[-2:,:]
     D2=csr_matrix(D2)
+    
     return D2
 
-N=30
-N_samples=5
-def create_A(dt,h,n):
-    D=create_D2(n).toarray()/h**2
+
+
+
+def create_A(dt,h,n,w):
+
+    D=create_D2(n,w).toarray()/h**2
     A=np.block([[np.zeros((n,n)),np.eye(n)],[D,np.zeros((n,n))]])
+    # return np.linalg.inv(np.eye(2*n)-dt*A)
     return np.eye(2*n)+dt*A
-p=np.zeros((N_samples,2*N))
-p[:N_samples, :N_samples]=np.eye(N_samples)
 
 
-x=np.linspace(0,1,N+1)[1:]
-dx=x[1]-x[0]
-dt=np.sqrt(0.1)*dx
-f=2*np.sin(2*math.pi*x).reshape(N,1)
-g=f*0
-f0=np.vstack([f,g])
+N=32
+N_samples=2
+iter=10
 
-mtx=create_A(dt,dx,N)
-psi=[np.vstack([np.sin(2*math.pi*x).reshape(N,1),g])] # base functions 
-# psi=[np.vstack([f,g])] # base functions 
-alpha=[0.1]
-rho=[0.9,0.1]
+G=generator(N,N_samples,0.01,int(N/2))
+p=G.p
+psi=G.psi[::2]
+alpha=[1/len(psi) for _ in range(len(psi))]
+dx=G.dx
+dt=G.dt
+
+rho=[1]
 u=[]
-D=[mtx,mtx@mtx]
-for i in range(3):
+w1=[-2,1,0]
+w2=[-30/12, 16/12,-1/12]
+mtx=create_A(dt,dx,N,w1)
+D=[mtx]
+f0=psi[4]
+for i in range(50):
     f0=mtx@f0
-    if True:
-        u.append(p@f0)
+    if i>iter:
+        u.append(p@f0+np.random.normal(0, 0.5, size=(N_samples, 1)))
 
 
-alpha_final,rho_final=exp_max(p, u,D,alpha,rho,psi)
+alpha_final,rho_final=exp_max(p, u,D,alpha,rho,psi, iter+2)
 # print(sum(rho_final))
-# print(rho_final)
-print(alpha_final)
+# # print(rho_final)
+print(np.argmax(abs(alpha_final)))
+print(abs(alpha_final))
+plt.plot(psi[np.argmax(alpha_final)])
+plt.plot(psi[4])
+plt.show()
+# x=np.linspace(0,1,N+1)[1:]
+# dx=x[1]-x[0]
+# f=np.sin(2*math.pi*x).reshape(N,1)
+# D=create_D2(N,w1).toarray()/dx/dx
+# print(mean_squared_error(D@f,-4*math.pi**2*f))
+# err=[]
+# for i in range(int(1/dt)):
+#     err.append(mean_squared_error(f0[3:N-3],(f_an*np.cos(2*math.pi*(i)*dt))[3:N-3]))
+#     f0=mtx@f0
+   
+
+#     if True:
+#         u.append(p@f0)
+
+# print(np.mean(err))
+# plt.show()
